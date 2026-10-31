@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="MatchPing">
+  <rect x="32" y="32" width="960" height="960" rx="224" fill="#182329"/>
+  <path d="M272 704V320L512 552L752 320V704" fill="none" stroke="#edbd67" stroke-width="68" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="752" cy="704" r="44" fill="#8ec6aa"/>
+</svg>

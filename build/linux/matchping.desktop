@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=MatchPing
+Comment=Explore Steam relays and compare real connection latency
+Exec=matchping
+Icon=matchping
+Terminal=false
+Categories=Game;Network;
+StartupWMClass=matchping

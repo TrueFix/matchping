@@ -1,0 +1,162 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish (for example v0.1.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'workflow_dispatch' || !github.event.deleted
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          persist-credentials: false
+      - id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - id: metadata
+        run: python3 scripts/release.py validate --tag "$RELEASE_TAG"
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+
+  build:
+    name: Native build (${{ matrix.platform }})
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux/amd64
+            asset: matchping-linux-amd64.tar.gz
+            tags: desktop,webkit2_41
+          - os: windows-latest
+            platform: windows/amd64
+            asset: matchping-windows-amd64.zip
+            tags: desktop
+          - os: macos-15-intel
+            platform: darwin/amd64
+            asset: matchping-darwin-amd64.zip
+            tags: desktop
+          - os: macos-15
+            platform: darwin/arm64
+            asset: matchping-darwin-arm64.zip
+            tags: desktop
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config iputils-ping
+      - run: npm ci && npm run build && npm test
+        working-directory: frontend
+      - run: go test -race ./...
+      - run: go vet ./...
+      - name: Generate and verify original app icons
+        run: |
+          go run ./scripts/icon
+          git diff --exit-code -- build/appicon.png build/windows/icon.ico build/linux/matchping.png
+      - name: Collect dependency license texts
+        run: python scripts/collect_licenses.py
+      - name: Browser integration checks
+        if: runner.os == 'Linux'
+        working-directory: frontend
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+      - run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.0
+      - name: Build desktop application
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          TAGS: ${{ matrix.tags }}
+        run: |
+          "$(go env GOPATH)/bin/wails" build -platform "$PLATFORM" -tags "$TAGS" -ldflags "-X github.com/TrueFix/matchping/internal/picker.Version=$VERSION -X github.com/TrueFix/matchping/internal/picker.Repository=$GITHUB_REPOSITORY"
+      - name: Verify Linux build version
+        if: runner.os == 'Linux'
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          test "$(build/bin/matchping --version)" = "$VERSION"
+      - name: Package native GUI application and notices
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: python scripts/package_release.py --platform "$PLATFORM"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Create manifest and checksums
+        run: python3 scripts/release.py prepare --tag "$RELEASE_TAG" --repository "$GITHUB_REPOSITORY"
+      - name: Verify artifacts
+        working-directory: release
+        run: sha256sum --check --strict SHA256SUMS
+      - name: Publish tested assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ needs.validate.outputs.sha }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)" = "$SOURCE_SHA"
+          flags=(--latest)
+          if [ "$PRERELEASE" = true ]; then flags=(--prerelease); fi
+          notes="docs/releases/$RELEASE_TAG.md"
+          if [ -f "$notes" ]; then flags+=(--notes-file "$notes"); else flags+=(--generate-notes); fi
+          gh release create "$RELEASE_TAG" release/* --verify-tag --title "MatchPing $RELEASE_TAG" "${flags[@]}"
+          echo "Release: https://github.com/$GH_REPO/releases/tag/$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"

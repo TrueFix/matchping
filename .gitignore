@@ -1,0 +1,15 @@
+/build/bin/
+/frontend/node_modules/
+/frontend/dist/
+/release/
+/.taste-skill/
+*.log
+/frontend/test-results/
+/frontend/playwright-report/
+/frontend/*.tsbuildinfo
+/frontend/package.json.md5
+/.screenshots/
+/frontend/wailsjs/
+__pycache__/
+*.syso
+.DS_Store
