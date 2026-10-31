@@ -55,7 +55,7 @@ Open `http://127.0.0.1:3415`. For frontend hot reload, also run `npm run dev` in
 ```sh
 go test -race ./...
 go vet ./...
-python3 scripts/release.py validate --tag v0.1.0
+python3 scripts/release.py validate --tag "v$(cat VERSION)"
 cd frontend
 npm test
 npx playwright install chromium
@@ -76,6 +76,7 @@ The original SVG artwork is `frontend/public/matchping.svg`. The dependency-free
 
 ```sh
 go run ./scripts/icon
+go run ./scripts/icon -check
 python3 scripts/collect_licenses.py
 python3 scripts/package_release.py --platform linux/amd64
 ```

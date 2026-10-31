@@ -12,7 +12,7 @@ import (
 )
 
 // Set by release builds. Local builds deliberately have no assumed GitHub owner.
-var Version = "0.1.0-dev"
+var Version = "0.1.1-dev"
 var Repository = ""
 
 type State struct {

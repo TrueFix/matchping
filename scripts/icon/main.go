@@ -5,13 +5,18 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"flag"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"log"
 	"math"
 	"os"
+	"path/filepath"
 )
+
+var check = flag.Bool("check", false, "Verify icon pixels and ICO entries without comparing PNG compression bytes")
 
 func distance(x, y, ax, ay, bx, by float64) float64 {
 	dx, dy := bx-ax, by-ay
@@ -66,12 +71,87 @@ func render(size int) []byte {
 }
 
 func write(path string, data []byte) {
+	if *check {
+		actual, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if filepath.Ext(path) == ".ico" {
+			err = verifyICO(actual, data)
+		} else {
+			err = verifyPNG(actual, data)
+		}
+		if err != nil {
+			log.Fatalf("%s: %v", path, err)
+		}
+		log.Printf("Verified %s", path)
+		return
+	}
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		log.Fatal(err)
 	}
 }
 
+// PNG/zlib compression can change between Go releases even when the artwork is
+// identical. Compare decoded pixels, not the encoder's version-specific bytes.
+func verifyPNG(actual, expected []byte) error {
+	a, err := png.Decode(bytes.NewReader(actual))
+	if err != nil {
+		return err
+	}
+	b, err := png.Decode(bytes.NewReader(expected))
+	if err != nil {
+		return err
+	}
+	if a.Bounds() != b.Bounds() {
+		return fmt.Errorf("incorrect image dimensions")
+	}
+	for y := a.Bounds().Min.Y; y < a.Bounds().Max.Y; y++ {
+		for x := a.Bounds().Min.X; x < a.Bounds().Max.X; x++ {
+			ar, ag, ab, aa := a.At(x, y).RGBA()
+			br, bg, bb, ba := b.At(x, y).RGBA()
+			if ar != br || ag != bg || ab != bb || aa != ba {
+				return fmt.Errorf("artwork differs at pixel (%d, %d)", x, y)
+			}
+		}
+	}
+	return nil
+}
+
+func verifyICO(actual, expected []byte) error {
+	if len(actual) < 6 || !bytes.Equal(actual[:6], expected[:6]) {
+		return fmt.Errorf("incorrect ICO header or image count")
+	}
+	count := int(binary.LittleEndian.Uint16(actual[4:6]))
+	if len(actual) < 6+count*16 {
+		return fmt.Errorf("truncated ICO directory")
+	}
+	offset := 6 + count*16
+	for i := 0; i < count; i++ {
+		entry := 6 + i*16
+		if !bytes.Equal(actual[entry:entry+8], expected[entry:entry+8]) {
+			return fmt.Errorf("incorrect ICO image metadata at entry %d", i)
+		}
+		size := int(binary.LittleEndian.Uint32(actual[entry+8 : entry+12]))
+		start := int(binary.LittleEndian.Uint32(actual[entry+12 : entry+16]))
+		expectedSize := int(binary.LittleEndian.Uint32(expected[entry+8 : entry+12]))
+		expectedStart := int(binary.LittleEndian.Uint32(expected[entry+12 : entry+16]))
+		if start != offset || size < 1 || start > len(actual) || size > len(actual)-start {
+			return fmt.Errorf("invalid ICO payload at entry %d", i)
+		}
+		if err := verifyPNG(actual[start:start+size], expected[expectedStart:expectedStart+expectedSize]); err != nil {
+			return fmt.Errorf("ICO entry %d: %w", i, err)
+		}
+		offset = start + size
+	}
+	if offset != len(actual) {
+		return fmt.Errorf("unexpected data after ICO images")
+	}
+	return nil
+}
+
 func main() {
+	flag.Parse()
 	write("build/appicon.png", render(1024))
 	write("build/linux/matchping.png", render(256))
 	sizes := []int{16, 24, 32, 48, 64, 128, 256}

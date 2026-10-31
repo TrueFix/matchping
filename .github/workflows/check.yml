@@ -25,8 +25,7 @@ jobs:
         working-directory: frontend
       - run: go test -race ./...
       - run: go vet ./...
-      - run: go run ./scripts/icon
-      - run: git diff --exit-code -- build/appicon.png build/windows/icon.ico build/linux/matchping.png
+      - run: go run ./scripts/icon -check
       - run: python3 scripts/release.py validate --tag "v$(cat VERSION)"
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: sudo apt-get update && sudo apt-get install -y iputils-ping

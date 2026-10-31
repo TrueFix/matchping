@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"image"
+	"image/color"
+	"image/draw"
 	"image/png"
 	"testing"
 )
@@ -25,5 +28,34 @@ func TestOriginalIcon(t *testing.T) {
 	}
 	if !bytes.Equal(render(16), render(16)) {
 		t.Fatal("icon generator must be deterministic")
+	}
+}
+
+func TestVerificationIgnoresCompressionButDetectsChangedArtwork(t *testing.T) {
+	expected := render(32)
+	decoded, err := png.Decode(bytes.NewReader(expected))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var uncompressed bytes.Buffer
+	encoder := png.Encoder{CompressionLevel: png.NoCompression}
+	if err := encoder.Encode(&uncompressed, decoded); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(expected, uncompressed.Bytes()) {
+		t.Fatal("test requires different PNG encodings")
+	}
+	if err := verifyPNG(uncompressed.Bytes(), expected); err != nil {
+		t.Fatal(err)
+	}
+	changed := image.NewNRGBA(decoded.Bounds())
+	draw.Draw(changed, changed.Bounds(), decoded, image.Point{}, draw.Src)
+	changed.SetNRGBA(16, 16, color.NRGBA{255, 0, 0, 255})
+	var output bytes.Buffer
+	if err := png.Encode(&output, changed); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyPNG(output.Bytes(), expected); err == nil {
+		t.Fatal("changed artwork passed verification")
 	}
 }

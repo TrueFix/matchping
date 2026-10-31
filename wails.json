@@ -11,7 +11,7 @@
     "companyName": "TrueFix",
     "productName": "MatchPing",
     "copyright": "Copyright © 2026 TrueFix",
-    "productVersion": "0.1.0",
+    "productVersion": "0.1.1",
     "comments": "Steam relay location and latency explorer"
   }
 }

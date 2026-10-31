@@ -90,9 +90,7 @@ jobs:
       - run: go test -race ./...
       - run: go vet ./...
       - name: Generate and verify original app icons
-        run: |
-          go run ./scripts/icon
-          git diff --exit-code -- build/appicon.png build/windows/icon.ico build/linux/matchping.png
+        run: go run ./scripts/icon -check
       - name: Collect dependency license texts
         run: python scripts/collect_licenses.py
       - name: Browser integration checks

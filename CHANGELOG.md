@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — first public release
+## 0.1.1 — first downloadable public release
 
 - Native desktop relay explorer, defaulting to Counter-Strike 2.
 - Real ICMP measurements, cancellable scans, per-game configuration caching, and saved App ID.
@@ -12,3 +12,7 @@
 - MIT-licensed original workspace and bundled third-party license notices.
 
 Read-only: no firewall changes or forced matchmaking regions. ICMP measurements are not in-game latency. Packages are unsigned; macOS builds are not notarized.
+
+## 0.1.0 — unpublished build
+
+The tagged build stopped before publication because icon verification compared compressed PNG bytes across different Go versions. Version 0.1.1 verifies decoded pixels and ICO structure instead, with tests confirming that changed artwork is still rejected.
